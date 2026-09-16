@@ -1,0 +1,77 @@
+name: Deploy Blankora
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Download Blankora ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir release
+          TAG="${{ github.event.release.tag_name }}"
+
+          if [ -n "$TAG" ]; then
+            gh release download "$TAG" \
+              --repo "${{ github.repository }}" \
+              --pattern "*.zip" \
+              --dir release
+          else
+            gh release download \
+              --repo "${{ github.repository }}" \
+              --pattern "*.zip" \
+              --dir release
+          fi
+
+      - name: Extract Blankora
+        run: |
+          mkdir site
+          ZIP=$(find release -name "*.zip" | head -1)
+          test -n "$ZIP"
+
+          unzip -q "$ZIP" -d site
+
+          if [ ! -f site/index.html ]; then
+            INDEX=$(find site -name index.html | head -1)
+
+            if [ -n "$INDEX" ]; then
+              ROOT=$(dirname "$INDEX")
+              mkdir site_tmp
+              cp -a "$ROOT"/. site_tmp/
+              rm -rf site
+              mv site_tmp site
+            fi
+          fi
+
+          test -f site/index.html
+
+      - name: Upload Blankora
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy Blankora
+        id: deployment
+        uses: actions/deploy-pages@v4
